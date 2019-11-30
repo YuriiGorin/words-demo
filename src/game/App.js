@@ -1,3 +1,7 @@
+import Task from "./Task";
+const symStatus = Symbol();
+const validStatuses = ["await-restore", "ready", "not-ready", "completed", "task:completed"];
+
 export default class App {
     constructor(service) {
         this._service = service;
@@ -5,9 +9,9 @@ export default class App {
         this._listeners = [];
         this._tasks = [];
 
-        this._service.checkContinuationAvailability((can) => {
+        this._service.checkRestoreAvailability((can) => {
             if (can) {
-                this._status = "awaiting-continuation";
+                this._status = "await-restore";
                 this._notify();
             } else {
                 this._service.getRandomWords((words) => {
@@ -19,6 +23,14 @@ export default class App {
 
     get status() {
         return this._status;
+    }
+
+    get _status() {
+        return this[symStatus];
+    }
+
+    set _status(newStatus) {
+
     }
 
     start() {
@@ -46,7 +58,7 @@ export default class App {
         this._tasks = words.map(w => new Task(w));
     }
 
-    continue() {
+    restore() {
         this._service.getContinuationData((data) => {
             this._prepareTasks(data.words);
         })

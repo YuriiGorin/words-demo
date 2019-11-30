@@ -7,7 +7,7 @@ export default class Service {
         }, 0);
     }
 
-    checkContinuationAvailability(cb) {
+    checkRestoreAvailability(cb) {
         setTimeout(() => {
             cb(false);
         }, 0);
