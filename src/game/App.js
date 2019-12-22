@@ -1,66 +1,109 @@
 import Task from "./Task";
-const symStatus = Symbol();
-const validStatuses = ["await-restore", "ready", "not-ready", "completed", "task:completed"];
+
+const eventTypes = ["ready", "task:changed", "completed", "await-restore"];
 
 export default class App {
     constructor(service) {
         this._service = service;
-        this._status = "awaiting";
-        this._listeners = [];
         this._tasks = [];
+        this._currentTaskNumber = 0;
+        this._listeners = new Map();
+        this._prepareApp().catch(console.error);
+    }
 
-        this._service.checkRestoreAvailability((can) => {
-            if (can) {
-                this._status = "await-restore";
-                this._notify();
+    get task() {
+        return this._tasks[this._currentTaskNumber];
+    }
+
+    get taskNumber() {
+        return this._currentTaskNumber + 1;
+    }
+
+    get totalTasks() {
+        return this._tasks.length;
+    }
+
+    on(event, handler) {
+        if (eventTypes.includes(event)) {
+            if (typeof handler === "function") {
+                this._listeners.set(event, handler);
             } else {
-                this._service.getRandomWords((words) => {
-                    this._prepareTasks(words);
-                });
+                throw new TypeError("Обработчик события должен быть функцией");
             }
+        } else {
+            throw new Error(`Тип событий ${event} не допустим`);
+        }
+    }
+
+    checkAnswer(answer) {
+        const result = this.task.check(answer);
+        if (result === "success") {
+            return true;
+        }
+        if (result === "completed") {
+            this._currentTaskNumber++;
+            if (this._currentTaskNumber < this.totalTasks) {
+                this._notify("task:changed");
+            } else {
+                this._notify("completed");
+            }
+            return true;
+        }
+        return false;
+    }
+
+    getStats() {
+
+    }
+
+    save() {
+        this._service.saveRestoreData( {
+            currentTask: this._currentTaskNumber,
+            tasks: this._tasks.map(task => task.getAnswer()),
         });
     }
 
-    get status() {
-        return this._status;
-    }
-
-    get _status() {
-        return this[symStatus];
-    }
-
-    set _status(newStatus) {
-
-    }
-
-    start() {
-        if (this._status === "ready") {
-
-        } else {
-            throw new Error("Приложение не готово");
-        }
-    }
-
-    stateChange(cb) {
-        if (typeof cb === "function") {
-            this._listeners.push(cb);
-        } else {
-            throw new TypeError("Обработчик должен быть функцией");
-        }
-    }
-
-    _notify() {
-        this._listeners.forEach(cb => cb.call(this, { status: this.status }));
-    }
-
-
-    _prepareTasks(words) {
-        this._tasks = words.map(w => new Task(w));
-    }
-
     restore() {
-        this._service.getContinuationData((data) => {
-            this._prepareTasks(data.words);
-        })
+        let data = this._service.getRestoreData();
+        if (data) {
+            this._currentTaskNumber = parseFloat(data.currentTask);
+            this._start(data.tasks).catch(console.error);
+        } else {
+            throw new Error("Невозможно продолжить процесс");
+        }
+    }
+
+    restart() {
+        this._service.clearRestoreData();
+        this._prepareApp().catch(console.error);
+    }
+
+    _notify(event) {
+        if (this._listeners.has(event)) {
+            const handler = this._listeners.get(event);
+            // вызов обработчика событий в контексте этого объекта
+            handler.call(this);
+        }
+    }
+
+    async _prepareApp() {
+        return new Promise((res) => {
+            setTimeout(async () => {
+                if (this._service.hasRestoreData()) {
+                    this._notify("await-restore");
+                } else {
+                    // получить данные для начала игры
+                    const data = await this._service.getTasksData({});
+                    await this._start(data);
+                }
+               res();
+            }, 0);
+        });
+    }
+
+    async _start(tasks) {
+        this._tasks = tasks.map(item => new Task({ content: item }));
+        this._notify("ready");
+        this._notify("task:changed");
     }
 }
